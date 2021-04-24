@@ -178,7 +178,6 @@ namespace DoomFireGUI {
 			this.DFIsProcessing = true;
 
 			this.DF.DoFire();
-			this.UpdateImage();
 
 			this.DFIsProcessing = false;
 		}
@@ -187,7 +186,7 @@ namespace DoomFireGUI {
 			var w = this.DF.FireWidth;
 			var h = this.DF.FireHeight;
 
-			var pixels = this.DF.GetPixels();
+			var pixels = this.DF.Pixels;
 			var colorPixels = new byte[pixels.Length * 3];
 
 			// early return in case the DoomFireSim object is replaced

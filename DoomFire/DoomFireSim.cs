@@ -8,6 +8,7 @@ using System.Drawing.Imaging;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 
 namespace DoomFire {
 	public class DoomFireSim: INotifyPropertyChanged {
@@ -77,10 +78,10 @@ namespace DoomFire {
 
 		#endregion
 
-		private byte[] pixels;
-		
+		private readonly byte[] randomBuffer = new byte[2];
+		public byte[] Pixels { get; private set; }
+
 		private readonly Random random;
-		private readonly RNGCryptoServiceProvider cRandom;
 
 		public DoomFireSim(int width, int height, float fade = 4.5f, float spread = 1, float wind = 0, int bits = 16) {
 			this.FireWidth = width;
@@ -94,24 +95,23 @@ namespace DoomFire {
 			this.oldFireActive = this._fireActive;
 
 			this.random = new Random();
-			this.cRandom = new RNGCryptoServiceProvider();
 		}
 
 		/// <summary>
-		/// Sets all pixels to 0 and fills the last line with 1s
+		/// Sets all pixels to 0 and optionally fills the last line with 1s
 		/// </summary>
 		public void InitPixels() {
 			var w = this.FireWidth;
 			var h = this.FireHeight;
 
-			this.pixels = new byte[w * h];
+			this.Pixels = new byte[w * h];
 			var offset = w * (h - 1);
 
 			if (!this._fireActive)
 				return;
 
 			for (var i = 0; i < w; i++) {
-				this.pixels[offset + i] = 0xFF;
+				this.Pixels[offset + i] = 0xFF;
 			}
 		}
 
@@ -122,11 +122,13 @@ namespace DoomFire {
 			this.InitPixels();
 		}
 
-		private readonly byte[] randomBuffer = new byte[2];
 		private float GetRandomFloat() {
 			this.random.NextBytes(this.randomBuffer);
-
 			return (BitConverter.ToUInt16(this.randomBuffer, 0) & this.cutoff) / (float)this.cutoff;
+		}
+
+		private int FixedMod(int x, int m) {
+			return (x % m + m) % m;
 		}
 
 		public void DoFire() {
@@ -134,7 +136,7 @@ namespace DoomFire {
 				var newValue = this._fireActive ? byte.MaxValue : byte.MinValue;
 				var offset = this.FireWidth * (this.FireHeight - 1);
 				for (var i = 0; i < this.FireWidth; i++) {
-					this.pixels[offset + i] = newValue;
+					this.Pixels[offset + i] = newValue;
 				}
 
 				this.oldFireActive = this._fireActive;
@@ -150,13 +152,9 @@ namespace DoomFire {
 			}
 		}
 
-		private int FixedMod(int x, int m) {
-			return (x % m + m) % m;
-		}
-
 		private void SpreadFire(int x, int row, int nextRow) {
 			var idx = row + x;
-			var pixel = this.pixels[idx];
+			var pixel = this.Pixels[idx];
 
 			var rnd = this.GetRandomFloat();
 			var randomRemapped = (rnd - 0.5f) * 2; // 0.0 - 1.0 remapped to -1.0 - 1.0
@@ -168,15 +166,11 @@ namespace DoomFire {
 			var nextIdx = nextRow + newX;
 
 			if (pixel == 0) {
-				this.pixels[nextIdx] = 0;
+				this.Pixels[nextIdx] = 0;
 				return;
 			}
 
-			this.pixels[nextIdx] = (byte)Math.Max(0, Math.Round(pixel - rnd * this.FadeSpeedBase));
-		}
-
-		public byte[] GetPixels() {
-			return this.pixels;
+			this.Pixels[nextIdx] = (byte)Math.Max(0, Math.Round(pixel - rnd * this.FadeSpeedBase));
 		}
 	}
 }
