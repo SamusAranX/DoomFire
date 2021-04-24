@@ -5,19 +5,20 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:DoomFireGUI"
         DataContext="{Binding RelativeSource={RelativeSource Self}}"
-        mc:Ignorable="d" ResizeMode="CanResizeWithGrip"
-		UseLayoutRounding="True"
+        mc:Ignorable="d"
+        ResizeMode="CanResizeWithGrip" UseLayoutRounding="True" 
+        Loaded="MainWindow_OnLoaded"  Closing="MainWindow_OnClosing"
         TextOptions.TextFormattingMode="Display" Title="Doom Fire"
+		Typography.NumeralAlignment="Tabular"
         Width="790" Height="447" MinWidth="790" MinHeight="447">
 	<Window.Resources>
-		<Storyboard x:Key="sb" RepeatBehavior="Forever" AutoReverse="True" TargetName="LiveSign" >
-			<ColorAnimation Storyboard.TargetProperty="(Button.Background).(SolidColorBrush.Color)"
-			                To="Red" BeginTime="0:0:0" Duration="0:0:1">
-							<ColorAnimation.EasingFunction>
-								<SineEase EasingMode="EaseInOut" />
-							</ColorAnimation.EasingFunction>
-			</ColorAnimation>
-		</Storyboard>
+		<SolidColorBrush x:Key="RedBrush" Color="#FF3B30" />
+		<SolidColorBrush x:Key="OrangeBrush" Color="#FF9500" />
+		<SolidColorBrush x:Key="YellowBrush" Color="#FFCC00" />
+		<SolidColorBrush x:Key="GreenBrush" Color="#34C759" />
+		<SolidColorBrush x:Key="BlueBrush" Color="#007AFF" />
+
+		<DropShadowEffect x:Key="DropShadowEffect" BlurRadius="2" Direction="270" ShadowDepth="1" />
 	</Window.Resources>
 
 	<Grid Margin="8">
@@ -35,9 +36,20 @@
 			</Grid.RowDefinitions>
 
 			<Border x:Name="DFBorder" Background="Black">
-				<Image Source="{Binding DFSource}"
-				       Stretch="Uniform" StretchDirection="UpOnly"
-				       RenderOptions.BitmapScalingMode="NearestNeighbor" />
+				<Image Source="{Binding DFSource}" Stretch="Uniform">
+					<Image.Style>
+						<Style TargetType="Image">
+							<Style.Triggers>
+								<DataTrigger Binding="{Binding UseFiltering}" Value="True">
+									<Setter Property="RenderOptions.BitmapScalingMode" Value="Linear"/>
+								</DataTrigger>
+								<DataTrigger Binding="{Binding UseFiltering}" Value="False">
+									<Setter Property="RenderOptions.BitmapScalingMode" Value="NearestNeighbor"/>
+								</DataTrigger>
+							</Style.Triggers>
+						</Style>
+					</Image.Style>
+				</Image>
 			</Border>
 
 			<Border Grid.Row="2" Padding="5" HorizontalAlignment="Center">
@@ -50,86 +62,123 @@
 		</Grid>
 
 		<StackPanel Grid.Column="2" Orientation="Vertical">
-	        <StackPanel.Resources>
-		        <Style TargetType="{x:Type Button}">
-			        <Setter Property="Margin" Value="0,5,0,0"/>
+			<StackPanel.Resources>
+				<Style TargetType="{x:Type Button}">
+					<Setter Property="Margin" Value="0,5,0,0"/>
 				</Style>
-		        <Style TargetType="{x:Type CheckBox}">
-			        <Setter Property="Margin" Value="0,5,0,0"/>
+				<Style TargetType="{x:Type CheckBox}">
+					<Setter Property="Margin" Value="0,5,0,0"/>
+					<Setter Property="VerticalContentAlignment" Value="Center" />
 				</Style>
 				<Style TargetType="{x:Type TextBlock}">
-			        <Setter Property="Margin" Value="0,5,0,0"/>
-		        </Style>
+					<Setter Property="Margin" Value="0,5,0,0"/>
+				</Style>
 			</StackPanel.Resources>
 
-	        <Border x:Name="LiveSign" Background="#F99" CornerRadius="4" Height="28">
-				<Label Foreground="White" FontSize="14" FontWeight="Bold" Content="LIVE" 
-				           HorizontalAlignment="Center" VerticalAlignment="Center" />
-	        </Border>
+			<Grid Height="27">
+				<ProgressBar Maximum="{Binding TargetFrameRate}" 
+				             Value="{Binding ActualFrameRate}">
+					<ProgressBar.Style>
+						<Style TargetType="ProgressBar">
+							<Style.Triggers>
+								<DataTrigger Binding="{Binding FrameMissed}" Value="True">
+									<Setter Property="Foreground" Value="{StaticResource RedBrush}"/>
+								</DataTrigger>
+								<DataTrigger Binding="{Binding FrameMissed}" Value="False">
+									<Setter Property="Foreground" Value="{StaticResource GreenBrush}"/>
+								</DataTrigger>
+							</Style.Triggers>
+						</Style>
+					</ProgressBar.Style>
+				</ProgressBar>
+
+				<TextBlock Foreground="White" FontSize="13" FontWeight="Bold" Margin="0"
+				           HorizontalAlignment="Center" VerticalAlignment="Center"
+				           Effect="{StaticResource DropShadowEffect}">
+					<Run Text="{
+					Binding ActualFrameRate, 
+					StringFormat=Framerate: {0:D2},
+					FallbackValue=N/A}" />
+				</TextBlock>
+			</Grid>
 
 			<Button Content="Initialize" Padding="10,4" Click="InitButton_OnClick" />
-			<Button Content="Start" Padding="10,4" Click="StartButton_OnClick" />
-			<Button Content="Pause" Padding="10,4" Click="PauseButton_OnClick" />
+			<Grid>
+				<Grid.ColumnDefinitions>
+					<ColumnDefinition />
+					<ColumnDefinition Width="5" />
+					<ColumnDefinition />
+				</Grid.ColumnDefinitions>
+				<Button Content="Start" Padding="10,4" Click="StartButton_OnClick" />
+				<Button Grid.Column="2" Content="Pause" Padding="10,4" Click="PauseButton_OnClick" />
+			</Grid>
 
-			<CheckBox Content="Use Palette" IsChecked="{Binding UsePalette}" VerticalContentAlignment="Center" />
-			<CheckBox Content="Invert Pixels" IsChecked="{Binding InvertPixels}" VerticalContentAlignment="Center" />
+			<CheckBox Content="Use Palette" 
+			          IsChecked="{Binding UsePalette}" />
+			<CheckBox Content="Enable Fire Source"
+			          DataContext="{Binding DF}"
+			          IsChecked="{Binding FireActive}" />
+			<CheckBox Content="Linear Filtering" 
+			          IsChecked="{Binding UseFiltering}" />
 
 			<StackPanel>
 				<TextBlock>
 					<Run>Downscaling Factor:</Run>
-					<Run Text="{Binding DownscaleFactor, FallbackValue=lol}" />
+					<Run Text="{Binding DownscaleFactor, FallbackValue=N/A}" />
 				</TextBlock>
 				<Slider Value="{Binding DownscaleFactor}"
-				        Minimum="1" Maximum="16" IsSnapToTickEnabled="True" TickFrequency="1" />
+				        Minimum="1" Maximum="15" IsSnapToTickEnabled="True" TickFrequency="1" />
 			</StackPanel>
 
-		<StackPanel>
-			<TextBlock>
-				<Run>Frameskip:</Run>
-				<Run Text="{Binding FrameSkip, FallbackValue=0}" />
-			</TextBlock>
-			<Slider Value="{Binding FrameSkip}"
-			        IsSnapToTickEnabled="True" 
-			        Minimum="0" Maximum="5"/>
-		</StackPanel>
+			<StackPanel>
+				<TextBlock>
+				<Run>Target Framerate:</Run>
+				<Run Text="{Binding TargetFrameRate, FallbackValue=N/A}" />
+				</TextBlock>
+				<Slider Value="{Binding TargetFrameRate}"
+				        Minimum="1" Maximum="60"
+						IsSnapToTickEnabled="True" />
+			</StackPanel>
 
 			<StackPanel DataContext="{Binding DF}">
 				<TextBlock>
 					<Run>Fade (Base):</Run>
-					<Run Text="{Binding FadeSpeedBase, FallbackValue=0}" />
+					<Run Text="{Binding FadeSpeedBase, FallbackValue=N/A}" />
 				</TextBlock>
 				<Slider Value="{Binding FadeSpeedBase}"
-				        Minimum="0" Maximum="20" IsSnapToTickEnabled="True" TickFrequency="0.1" />
+				        Minimum="0" Maximum="32" TickFrequency="0.5"
+				        IsSnapToTickEnabled="True" />
 			</StackPanel>
 
 			<StackPanel DataContext="{Binding DF}">
 				<TextBlock>
-					<Run>Horizontal Range:</Run>
-					<Run Text="{Binding Spread, FallbackValue=0}" />
+					<Run>Spread:</Run>
+					<Run Text="{Binding Spread, FallbackValue=N/A}" />
 				</TextBlock>
 				<Slider Value="{Binding Spread}"
-				        IsSnapToTickEnabled="True" Maximum="20"/>
+				        Minimum="0" Maximum="8" TickFrequency="1"
+				        IsSnapToTickEnabled="True" />
 			</StackPanel>
 
 			<StackPanel DataContext="{Binding DF}">
 				<TextBlock>
 					<Run>Wind:</Run>
-					<Run Text="{Binding Wind, FallbackValue=0}" />
+					<Run Text="{Binding Wind, FallbackValue=N/A}" />
 				</TextBlock>
 				<Slider Value="{Binding Wind}"
-				        IsSnapToTickEnabled="True" 
-				        Minimum="-10" Maximum="10"/>
+				        Minimum="-6" Maximum="6" TickFrequency="1"
+				        IsSnapToTickEnabled="True" />
 			</StackPanel>
 
 			<StackPanel DataContext="{Binding DF}">
 				<TextBlock>
 					<Run>Bits:</Run>
-					<Run Text="{Binding CutoffBits, FallbackValue=0}" />
+					<Run Text="{Binding CutoffBits, FallbackValue=N/A}" />
 				</TextBlock>
 				<Slider Value="{Binding CutoffBits}"
-				        IsSnapToTickEnabled="True" 
-				        Minimum="1" Maximum="64"/>
+				        Minimum="1" Maximum="16" 
+				        IsSnapToTickEnabled="True" />
 			</StackPanel>
-        </StackPanel>
+		</StackPanel>
 	</Grid>
 </Window>

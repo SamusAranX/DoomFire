@@ -2,11 +2,15 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
 namespace DoomFire {
-	public class DoomFire: INotifyPropertyChanged {
+	public class DoomFireSim: INotifyPropertyChanged {
 
 		#region INotifyPropertyChanged
 
@@ -26,8 +30,8 @@ namespace DoomFire {
 
 		#endregion
 
-		public readonly int FireWidth;
-		public readonly int FireHeight;
+		public int FireWidth { get; private set; }
+		public int FireHeight { get; private set; }
 
 		#region Properties
 
@@ -37,13 +41,13 @@ namespace DoomFire {
 			set => this.SetField(ref this._fadeSpeedBase, value);
 		}
 
-		private float _spread = 2;
+		private float _spread;
 		public float Spread {
 			get => this._spread;
 			set => this.SetField(ref this._spread, value);
 		}
 
-		private float _wind = 0;
+		private float _wind;
 		public float Wind {
 			get => this._wind;
 			set => this.SetField(ref this._wind, value);
@@ -64,6 +68,13 @@ namespace DoomFire {
 			}
 		}
 
+		private bool oldFireActive = true;
+		private bool _fireActive = true;
+		public bool FireActive {
+			get => this._fireActive;
+			set => this.SetField(ref this._fireActive, value);
+		}
+
 		#endregion
 
 		private byte[] pixels;
@@ -71,12 +82,16 @@ namespace DoomFire {
 		private readonly Random random;
 		private readonly RNGCryptoServiceProvider cRandom;
 
-		public DoomFire(int width, int height, float fade = 1.75f) {
+		public DoomFireSim(int width, int height, float fade = 4.5f, float spread = 1, float wind = 0, int bits = 16) {
 			this.FireWidth = width;
 			this.FireHeight = height;
 			this.FadeSpeedBase = fade;
 
-			this.CutoffBits = 32;
+			this.Spread = spread;
+			this.Wind = wind;
+			this.CutoffBits = bits;
+
+			this.oldFireActive = this._fireActive;
 
 			this.random = new Random();
 			this.cRandom = new RNGCryptoServiceProvider();
@@ -91,20 +106,40 @@ namespace DoomFire {
 
 			this.pixels = new byte[w * h];
 			var offset = w * (h - 1);
+
+			if (!this._fireActive)
+				return;
+
 			for (var i = 0; i < w; i++) {
 				this.pixels[offset + i] = 0xFF;
 			}
 		}
-		
-		private readonly byte[] randomBuffer = new byte[8];
-		private double GetRandomDouble() {
-			//this.cRandom.GetBytes(this.randomBuffer);
-			this.random.NextBytes(this.randomBuffer);
-			
-			return (BitConverter.ToUInt64(this.randomBuffer, 0) & this.cutoff) / (double)this.cutoff;
+
+		public void Resize(int width, int height) {
+			this.FireWidth = width;
+			this.FireHeight = height;
+
+			this.InitPixels();
 		}
-		
+
+		private readonly byte[] randomBuffer = new byte[2];
+		private float GetRandomFloat() {
+			this.random.NextBytes(this.randomBuffer);
+
+			return (BitConverter.ToUInt16(this.randomBuffer, 0) & this.cutoff) / (float)this.cutoff;
+		}
+
 		public void DoFire() {
+			if (this.oldFireActive != this._fireActive) {
+				var newValue = this._fireActive ? byte.MaxValue : byte.MinValue;
+				var offset = this.FireWidth * (this.FireHeight - 1);
+				for (var i = 0; i < this.FireWidth; i++) {
+					this.pixels[offset + i] = newValue;
+				}
+
+				this.oldFireActive = this._fireActive;
+			}
+
 			for (var y = 1; y < this.FireHeight; y++) {
 				var row = y * this.FireWidth;
 				var nextRow = (y-1) * this.FireWidth;
@@ -115,22 +150,23 @@ namespace DoomFire {
 			}
 		}
 
+		private int FixedMod(int x, int m) {
+			return (x % m + m) % m;
+		}
+
 		private void SpreadFire(int x, int row, int nextRow) {
 			var idx = row + x;
+			var pixel = this.pixels[idx];
 
-			var rnd = this.GetRandomDouble();
-			var randomRemapped = (rnd - 0.5) * 2; // 0.0 to 1.0 remapped to -1.0 to 1.0
+			var rnd = this.GetRandomFloat();
+			var randomRemapped = (rnd - 0.5f) * 2; // 0.0 - 1.0 remapped to -1.0 - 1.0
 			var randomSpread = randomRemapped * this._spread;
 
 			var newX = (int)Math.Round(x + randomSpread + this._wind);
-			if (newX >= this.FireWidth)
-				newX -= this.FireWidth;
-			else if (newX < 0)
-				newX += this.FireWidth;
+			newX = this.FixedMod(newX, this.FireWidth);
 
 			var nextIdx = nextRow + newX;
 
-			var pixel = this.pixels[idx];
 			if (pixel == 0) {
 				this.pixels[nextIdx] = 0;
 				return;

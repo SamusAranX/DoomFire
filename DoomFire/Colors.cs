@@ -77,7 +77,7 @@ namespace DoomFire
 
 		public static Color[] PopulatePalette(int size) {
 			var fadeToBlack = size / 3; // the first x palette entries fade in from black
-			var fadeToWhite = size - (int)Math.Round(size / 10.0f);
+			var fadeToWhite = size - (int)Math.Round(size / 12f);
 
 			var palette = new Color[size];
 

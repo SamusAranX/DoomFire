@@ -3,11 +3,12 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
-
+using DoomFire;
 using DColor = System.Drawing.Color;
 
 namespace DoomFireGUI {
@@ -31,8 +32,8 @@ namespace DoomFireGUI {
 
 		#endregion
 
-		private DoomFire.DoomFire _df;
-		public DoomFire.DoomFire DF {
+		private DoomFireSim _df;
+		public DoomFireSim DF {
 			get => this._df;
 			private set => this.SetField(ref this._df, value);
 		}
@@ -43,10 +44,10 @@ namespace DoomFireGUI {
 			set => this.SetField(ref this._usePalette, value);
 		}
 
-		private bool _invertPixels;
-		public bool InvertPixels {
-			get => this._invertPixels;
-			set => this.SetField(ref this._invertPixels, value);
+		private bool _useFiltering = false;
+		public bool UseFiltering {
+			get => this._useFiltering;
+			set => this.SetField(ref this._useFiltering, value);
 		}
 
 		private BitmapSource _dfsource;
@@ -73,38 +74,104 @@ namespace DoomFireGUI {
 			set => this.SetField(ref this._downscaleFactor, value);
 		}
 
-		private int _frameSkip = 1;
-		public int FrameSkip {
-			get => this._frameSkip;
-			set => this.SetField(ref this._frameSkip, value);
+		private float _targetFrameRate = 30;
+		public float TargetFrameRate {
+			get => this._targetFrameRate;
+			set => this.SetField(ref this._targetFrameRate, value);
 		}
 
-		private readonly Storyboard sb;
+		private bool _frameMissed;
+		public bool FrameMissed {
+			get => this._frameMissed;
+			set => this.SetField(ref this._frameMissed, value);
+		}
+
+		private int _actualFrameRate;
+		public int ActualFrameRate {
+			get => this._actualFrameRate;
+			set => this.SetField(ref this._actualFrameRate, value);
+		}
+
 		private readonly DColor[] firePalette;
 
-		private const int FIRE_WIDTH = 600;
-		private const int FIRE_HEIGHT = 360;
+		private Thread simThread;
 
 		public MainWindow() {
 			this.firePalette = DoomFire.Colors.PopulatePalette(256);
 
-			this.InitButton_OnClick(null, null);
-
 			this.InitializeComponent();
-
-			this.sb = (Storyboard)this.FindResource("sb");
-			CompositionTarget.Rendering += this.OnRender;
 		}
 
-		private int _frameSkipCounter;
-		private void SimulationStep() {
-			if (this.DFIsProcessing) {
-				Debug.WriteLine("missed");
+		private void MainWindow_OnLoaded(object sender, RoutedEventArgs e) {
+			this.InitButton_OnClick(null, null);
+		}
+
+		private void MainWindow_OnClosing(object sender, CancelEventArgs e) {
+			this.DFIsRunning = false;
+		}
+
+		private void InitButton_OnClick(object sender, RoutedEventArgs e) {
+			var borderWidth = (int)Math.Round(this.DFBorder.ActualWidth - this.DFBorder.BorderThickness.Left - this.DFBorder.BorderThickness.Right);
+			var borderHeight = (int)Math.Round(this.DFBorder.ActualHeight - this.DFBorder.BorderThickness.Top - this.DFBorder.BorderThickness.Bottom);
+
+			var w = (int)Math.Round(borderWidth / this._downscaleFactor);
+			var h = (int)Math.Round(borderHeight / this._downscaleFactor);
+
+			if (this.DF == null) {
+				this.DF = new DoomFireSim(w, h);
+				this.DF.InitPixels();
+			} else
+				this.DF.Resize(w, h);
+				
+			this.UpdateImage();
+		}
+
+		private void StartButton_OnClick(object sender, RoutedEventArgs e) {
+			if (this.DFIsRunning)
 				return;
+
+			this.ResizeMode = ResizeMode.NoResize;
+			this.DFIsRunning = true;
+
+			this.simThread = new Thread(this.ThreadLoop);
+			this.simThread.Start();
+		}
+
+		private void PauseButton_OnClick(object sender, RoutedEventArgs e) {
+			this.DFIsRunning = false;
+			this.ResizeMode = ResizeMode.CanResizeWithGrip;
+		}
+
+		private void ThreadLoop() {
+			var sw = new Stopwatch();
+			sw.Start();
+
+			while (this.DF != null && this.DFIsRunning) {
+				var curTime = sw.ElapsedMilliseconds;
+				this.SimulationStep();
+				this.UpdateImage();
+
+				var targetSleep = 1000 / this._targetFrameRate;
+
+				var frameElapsed = (int)(sw.ElapsedMilliseconds - curTime);
+				var sleepElapsed = (int)Math.Round(targetSleep - frameElapsed);
+
+				this.ActualFrameRate = (int)Math.Min(1000f / frameElapsed, this._targetFrameRate);
+
+				if (frameElapsed > targetSleep) {
+					this.FrameMissed = true;
+					Thread.Sleep((int)Math.Round(targetSleep));
+				} else {
+					this.FrameMissed = false;
+					Thread.Sleep(sleepElapsed);
+				}
 			}
 
-			if (this._frameSkipCounter <= this._frameSkip) {
-				this._frameSkipCounter++;
+			sw.Stop();
+		}
+		
+		private void SimulationStep() {
+			if (this.DFIsProcessing) {
 				return;
 			}
 			
@@ -112,35 +179,24 @@ namespace DoomFireGUI {
 
 			this.DF.DoFire();
 			this.UpdateImage();
-			this._frameSkipCounter = 0;
 
 			this.DFIsProcessing = false;
 		}
 
 		private void UpdateImage() {
-			// this prevents crashes during app shutdown
-			if (Application.Current == null || Application.Current.Dispatcher == null)
-				return;
-
-			// when called as a timer callback, this method will execute on a different thread
-			// so we'll have to manually re-route this to the main thread
-
 			var w = this.DF.FireWidth;
 			var h = this.DF.FireHeight;
 
 			var pixels = this.DF.GetPixels();
 			var colorPixels = new byte[pixels.Length * 3];
 
-			// early return in case the DoomFire object is replaced
+			// early return in case the DoomFireSim object is replaced
 			if (w * h != pixels.Length)
 				return;
 
 			for (var i = 0; i < pixels.Length; i++) {
 				var offset = i * 3;
 				var pixel = pixels[i];
-
-				if (this.InvertPixels)
-					pixel ^= 0xFF;
 
 				if (this.UsePalette) {
 					var newCol = this.firePalette[pixel];
@@ -154,42 +210,17 @@ namespace DoomFireGUI {
 				}
 			}
 
+			// this prevents most crashes during app shutdown
+			if (Application.Current == null || Application.Current.Dispatcher == null)
+				return;
+
+			// this method might execute on a different thread
+			// so we'll have to manually re-route this to the main thread
 			Application.Current.Dispatcher.Invoke(() => {
 				var bs = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr24, null, colorPixels, w * 3);
 				bs.Freeze();
 				this.DFSource = bs;
 			});
-		}
-
-		public void OnRender(object sender, EventArgs e) {
-			if (this.DF == null || !this.DFIsRunning)
-				return;
-			
-			this.SimulationStep();
-		}
-
-		private void InitButton_OnClick(object sender, RoutedEventArgs e) {
-			var w = (int)Math.Round(FIRE_WIDTH / this._downscaleFactor);
-			var h = (int)Math.Round(FIRE_HEIGHT / this._downscaleFactor);
-
-			this.DF = new DoomFire.DoomFire(w, h, 2.5f);
-			this.DF.InitPixels();
-			this.UpdateImage();
-		}
-		
-		private void StartButton_OnClick(object sender, RoutedEventArgs e) {
-			if (this.DFIsRunning)
-				return;
-
-			this.ResizeMode = ResizeMode.NoResize;
-			this.DFIsRunning = true;
-			this.sb.Begin();
-		}
-
-		private void PauseButton_OnClick(object sender, RoutedEventArgs e) {
-			this.ResizeMode = ResizeMode.CanResizeWithGrip;
-			this.sb.Stop();
-			this.DFIsRunning = false;
 		}
 	}
 }
