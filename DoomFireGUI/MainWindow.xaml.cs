@@ -4,9 +4,9 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using DoomFire;
 using DColor = System.Drawing.Color;
@@ -31,6 +31,8 @@ namespace DoomFireGUI {
 		}
 
 		#endregion
+
+		#region Properties
 
 		private DoomFireSim _df;
 		public DoomFireSim DF {
@@ -92,9 +94,12 @@ namespace DoomFireGUI {
 			set => this.SetField(ref this._actualFrameRate, value);
 		}
 
+		#endregion
+
 		private readonly DColor[] firePalette;
 
-		private Thread simThread;
+		private CancellationTokenSource tokenSource = new CancellationTokenSource();
+		private Task simulationTask;
 
 		public MainWindow() {
 			this.firePalette = DoomFire.Colors.PopulatePalette(256);
@@ -107,7 +112,7 @@ namespace DoomFireGUI {
 		}
 
 		private void MainWindow_OnClosing(object sender, CancelEventArgs e) {
-			this.DFIsRunning = false;
+			this.tokenSource.Cancel();
 		}
 
 		private void InitButton_OnClick(object sender, RoutedEventArgs e) {
@@ -127,32 +132,42 @@ namespace DoomFireGUI {
 		}
 
 		private void StartButton_OnClick(object sender, RoutedEventArgs e) {
-			if (this.DFIsRunning)
-				return;
+			if (this.DFIsRunning) {
+				this.ResizeMode = ResizeMode.CanResizeWithGrip;
 
-			this.ResizeMode = ResizeMode.NoResize;
-			this.DFIsRunning = true;
+				this.tokenSource.Cancel();
+				this.DFIsRunning = false;
 
-			this.simThread = new Thread(this.ThreadLoop);
-			this.simThread.Start();
+			} else {
+				this.ResizeMode = ResizeMode.NoResize;
+
+				this.tokenSource = new CancellationTokenSource();
+				this.simulationTask = Task.Run(() => {
+					this.ThreadLoop(this.tokenSource.Token);
+				});
+
+				this.DFIsRunning = true;
+			}
 		}
 
-		private void PauseButton_OnClick(object sender, RoutedEventArgs e) {
-			this.DFIsRunning = false;
-			this.ResizeMode = ResizeMode.CanResizeWithGrip;
-		}
-
-		private void ThreadLoop() {
+		private void ThreadLoop(CancellationToken token) {
 			var sw = new Stopwatch();
 			sw.Start();
 
-			while (this.DF != null && this.DFIsRunning) {
+			while (true) {
+				if (token.IsCancellationRequested)
+					break;
+
 				var curTime = sw.ElapsedMilliseconds;
+
 				this.SimulationStep();
 				this.UpdateImage();
 
-				var targetSleep = 1000 / this._targetFrameRate;
+				// another check for good measure
+				if (token.IsCancellationRequested)
+					break;
 
+				var targetSleep = 1000 / this._targetFrameRate;
 				var frameElapsed = (int)(sw.ElapsedMilliseconds - curTime);
 				var sleepElapsed = (int)Math.Round(targetSleep - frameElapsed);
 
@@ -168,12 +183,12 @@ namespace DoomFireGUI {
 			}
 
 			sw.Stop();
+			Debug.WriteLine("Task completed");
 		}
 		
 		private void SimulationStep() {
-			if (this.DFIsProcessing) {
+			if (this.DFIsProcessing)
 				return;
-			}
 			
 			this.DFIsProcessing = true;
 

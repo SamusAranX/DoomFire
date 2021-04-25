@@ -103,15 +103,22 @@
 			</Grid>
 
 			<Button Content="Initialize" Padding="10,4" Click="InitButton_OnClick" />
-			<Grid>
-				<Grid.ColumnDefinitions>
-					<ColumnDefinition />
-					<ColumnDefinition Width="5" />
-					<ColumnDefinition />
-				</Grid.ColumnDefinitions>
-				<Button Content="Start" Padding="10,4" Click="StartButton_OnClick" />
-				<Button Grid.Column="2" Content="Pause" Padding="10,4" Click="PauseButton_OnClick" />
-			</Grid>
+
+			<Button Padding="10,4" Margin="0,5,0,0"
+				        Click="StartButton_OnClick">
+				<Button.Style>
+					<Style TargetType="Button">
+						<Style.Triggers>
+							<DataTrigger Binding="{Binding DFIsRunning}" Value="True">
+								<Setter Property="Content" Value="Stop"/>
+							</DataTrigger>
+							<DataTrigger Binding="{Binding DFIsRunning}" Value="False">
+								<Setter Property="Content" Value="Start"/>
+							</DataTrigger>
+						</Style.Triggers>
+					</Style>
+				</Button.Style>
+			</Button>
 
 			<CheckBox Content="Use Palette" 
 			          IsChecked="{Binding UsePalette}" />
@@ -172,7 +179,7 @@
 
 			<StackPanel DataContext="{Binding DF}">
 				<TextBlock>
-					<Run>Bits:</Run>
+					<Run>Randomness Bits:</Run>
 					<Run Text="{Binding CutoffBits, FallbackValue=N/A}" />
 				</TextBlock>
 				<Slider Value="{Binding CutoffBits}"

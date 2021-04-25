@@ -1,14 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Threading.Tasks;
 
 namespace DoomFire {
 	public class DoomFireSim: INotifyPropertyChanged {
@@ -153,8 +146,10 @@ namespace DoomFire {
 		}
 
 		private void SpreadFire(int x, int row, int nextRow) {
+			var pixels = this.Pixels;
+
 			var idx = row + x;
-			var pixel = this.Pixels[idx];
+			var pixel = pixels[idx];
 
 			var rnd = this.GetRandomFloat();
 			var randomRemapped = (rnd - 0.5f) * 2; // 0.0 - 1.0 remapped to -1.0 - 1.0
@@ -166,11 +161,13 @@ namespace DoomFire {
 			var nextIdx = nextRow + newX;
 
 			if (pixel == 0) {
-				this.Pixels[nextIdx] = 0;
+				pixels[nextIdx] = 0;
 				return;
 			}
 
-			this.Pixels[nextIdx] = (byte)Math.Max(0, Math.Round(pixel - rnd * this.FadeSpeedBase));
+			pixels[nextIdx] = (byte)Math.Max(0, Math.Round(pixel - rnd * this.FadeSpeedBase));
+
+			this.Pixels = pixels;
 		}
 	}
 }
