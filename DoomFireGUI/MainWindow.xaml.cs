@@ -8,103 +8,95 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+
 using DoomFire;
+
+using Colors = DoomFire.Colors;
 using DColor = System.Drawing.Color;
 
 namespace DoomFireGUI {
-	public partial class MainWindow: INotifyPropertyChanged {
 
-		#region INotifyPropertyChanged
+	public partial class MainWindow : INotifyPropertyChanged {
 
-		public event PropertyChangedEventHandler PropertyChanged;
+		private readonly DColor[] _firePalette;
 
-		private void OnPropertyChanged(string propertyName) {
-			this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-		}
-
-		private void SetField<T>(ref T field, T value, [CallerMemberName] string propertyName = null) {
-			if (EqualityComparer<T>.Default.Equals(field, value))
-				return;
-
-			field = value;
-			this.OnPropertyChanged(propertyName);
-		}
-
-		#endregion
-
-		#region Properties
+		private int _actualFrameRate;
 
 		private DoomFireSim _df;
+
+		private bool _dfProcessing;
+
+		private bool _dfRunning;
+
+		private BitmapSource _dfsource;
+
+		private double _downscaleFactor = 2;
+
+		private bool _frameMissed;
+		private Task _simulationTask;
+
+		private float _targetFrameRate = 30;
+
+		private CancellationTokenSource _tokenSource = new CancellationTokenSource();
+
+		private bool _useFiltering;
+
+		private bool _usePalette = true;
+
+		public MainWindow() {
+			this._firePalette = Colors.PopulatePalette(256);
+
+			this.InitializeComponent();
+		}
+
 		public DoomFireSim DF {
 			get => this._df;
 			private set => this.SetField(ref this._df, value);
 		}
 
-		private bool _usePalette = true;
 		public bool UsePalette {
 			get => this._usePalette;
 			set => this.SetField(ref this._usePalette, value);
 		}
 
-		private bool _useFiltering = false;
 		public bool UseFiltering {
 			get => this._useFiltering;
 			set => this.SetField(ref this._useFiltering, value);
 		}
 
-		private BitmapSource _dfsource;
 		public BitmapSource DFSource {
 			get => this._dfsource;
 			set => this.SetField(ref this._dfsource, value);
 		}
 
-		private bool _dfProcessing;
 		public bool DFIsProcessing {
 			get => this._dfProcessing;
 			set => this.SetField(ref this._dfProcessing, value);
 		}
 
-		private bool _dfRunning;
 		public bool DFIsRunning {
 			get => this._dfRunning;
 			set => this.SetField(ref this._dfRunning, value);
 		}
 
-		private double _downscaleFactor = 2;
 		public double DownscaleFactor {
 			get => this._downscaleFactor;
 			set => this.SetField(ref this._downscaleFactor, value);
 		}
 
-		private float _targetFrameRate = 30;
 		public float TargetFrameRate {
 			get => this._targetFrameRate;
 			set => this.SetField(ref this._targetFrameRate, value);
 		}
 
-		private bool _frameMissed;
 		public bool FrameMissed {
 			get => this._frameMissed;
 			set => this.SetField(ref this._frameMissed, value);
 		}
 
-		private int _actualFrameRate;
 		public int ActualFrameRate {
 			get => this._actualFrameRate;
 			set => this.SetField(ref this._actualFrameRate, value);
-		}
-
-		#endregion
-
-		private readonly DColor[] firePalette;
-
-		private CancellationTokenSource tokenSource = new CancellationTokenSource();
-		private Task simulationTask;
-
-		public MainWindow() {
-			this.firePalette = DoomFire.Colors.PopulatePalette(256);
-
-			this.InitializeComponent();
 		}
 
 		private void MainWindow_OnLoaded(object sender, RoutedEventArgs e) {
@@ -112,7 +104,7 @@ namespace DoomFireGUI {
 		}
 
 		private void MainWindow_OnClosing(object sender, CancelEventArgs e) {
-			this.tokenSource.Cancel();
+			this._tokenSource.Cancel();
 		}
 
 		private void InitButton_OnClick(object sender, RoutedEventArgs e) {
@@ -122,28 +114,36 @@ namespace DoomFireGUI {
 			var w = (int)Math.Round(borderWidth / this._downscaleFactor);
 			var h = (int)Math.Round(borderHeight / this._downscaleFactor);
 
+			var restartFire = false;
+
+			if (this.DFIsRunning) {
+				this.StartButton_OnClick(null, null);
+				restartFire = true;
+			}
+
 			if (this.DF == null) {
 				this.DF = new DoomFireSim(w, h);
 				this.DF.InitPixels();
 			} else
 				this.DF.Resize(w, h);
-				
+
 			this.UpdateImage();
+
+			if (restartFire) this.StartButton_OnClick(null, null);
 		}
 
 		private void StartButton_OnClick(object sender, RoutedEventArgs e) {
 			if (this.DFIsRunning) {
 				this.ResizeMode = ResizeMode.CanResizeWithGrip;
 
-				this.tokenSource.Cancel();
+				this._tokenSource.Cancel();
 				this.DFIsRunning = false;
-
 			} else {
 				this.ResizeMode = ResizeMode.NoResize;
 
-				this.tokenSource = new CancellationTokenSource();
-				this.simulationTask = Task.Run(() => {
-					this.ThreadLoop(this.tokenSource.Token);
+				this._tokenSource = new CancellationTokenSource();
+				this._simulationTask = Task.Run(() => {
+					this.ThreadLoop(this._tokenSource.Token);
 				});
 
 				this.DFIsRunning = true;
@@ -185,11 +185,11 @@ namespace DoomFireGUI {
 			sw.Stop();
 			Debug.WriteLine("Task completed");
 		}
-		
+
 		private void SimulationStep() {
 			if (this.DFIsProcessing)
 				return;
-			
+
 			this.DFIsProcessing = true;
 
 			this.DF.DoFire();
@@ -213,7 +213,7 @@ namespace DoomFireGUI {
 				var pixel = pixels[i];
 
 				if (this.UsePalette) {
-					var newCol = this.firePalette[pixel];
+					var newCol = this._firePalette[pixel];
 					colorPixels[offset + 0] = newCol.B;
 					colorPixels[offset + 1] = newCol.G;
 					colorPixels[offset + 2] = newCol.R;
@@ -236,5 +236,25 @@ namespace DoomFireGUI {
 				this.DFSource = bs;
 			});
 		}
+
+		#region INotifyPropertyChanged
+
+		public event PropertyChangedEventHandler PropertyChanged;
+
+		private void OnPropertyChanged(string propertyName) {
+			this.PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+		}
+
+		private void SetField<T>(ref T field, T value, [CallerMemberName] string propertyName = null) {
+			if (EqualityComparer<T>.Default.Equals(field, value))
+				return;
+
+			field = value;
+			this.OnPropertyChanged(propertyName);
+		}
+
+		#endregion
+
 	}
+
 }
